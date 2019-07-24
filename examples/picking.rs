@@ -213,7 +213,7 @@ fn main() {
         if let (Some(cursor), Some(&(ref picking_texture, ref depth_texture))) = (cursor_position, picking_attachments.as_ref()) {
             let read_target = glium::Rect {
                 left: cursor.0.max(1) as u32 - 1,
-                bottom: picking_texture.get_height().unwrap() - cursor.1.max(1) as u32 - 1,
+                bottom: (picking_texture.get_height().unwrap() as i32 - cursor.1.max(1) - 1).max(0) as u32,
                 width: 1,
                 height: 1,
             };
