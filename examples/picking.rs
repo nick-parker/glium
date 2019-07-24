@@ -102,7 +102,7 @@ fn main() {
     ).unwrap();
 
     let mut camera = support::camera::CameraState::new();
-    camera.set_position((0.0, 0.0, 1.5));
+    camera.set_position((0.0, 0.0, -1.5));
     camera.set_direction((0.0, 0.0, 1.0));
 
     //id's must be unique and != 0
@@ -114,10 +114,11 @@ fn main() {
     per_instance.sort_by(|a, b| a.id.cmp(&b.id));
     let original = per_instance.clone();
 
-    let mut picking_attachments: Option<(glium::texture::UnsignedTexture2d, glium::framebuffer::DepthRenderBuffer)> = None;
+    let mut picking_attachments: Option<(glium::texture::UnsignedTexture2d, glium::texture::DepthTexture2d)> = None;
     let picking_pbo: glium::texture::pixel_buffer::PixelBuffer<u32>
         = glium::texture::pixel_buffer::PixelBuffer::new_empty(&display, 1);
-
+    let pbo_depth: glium::pixel_buffer::PixelBuffer<f32>
+        = glium::texture::pixel_buffer::PixelBuffer::new_empty(&display, 1);
 
     let mut cursor_position: Option<(i32, i32)> = None;
 
@@ -129,6 +130,8 @@ fn main() {
         // determine which object has been picked at the previous frame
         let picked_object = {
             let data = picking_pbo.read().map(|d| d[0]).unwrap_or(0);
+            let depth = pbo_depth.read().map(|d| d[0]).unwrap_or(1024.0);
+            dbg!(depth);
             if data != 0 {
                 per_instance.binary_search_by(|x| x.id.cmp(&data)).ok()
             } else {
@@ -180,9 +183,10 @@ fn main() {
                     glium::texture::MipmapsOption::NoMipmap,
                     width, height,
                 ).unwrap(),
-                glium::framebuffer::DepthRenderBuffer::new(
+                glium::texture::DepthTexture2d::empty_with_format(
                     &display,
                     glium::texture::DepthFormat::F32,
+                    glium::texture::MipmapsOption::NoMipmap,
                     width, height,
                 ).unwrap()
             ))
@@ -206,10 +210,10 @@ fn main() {
 
 
         // committing into the picking pbo
-        if let (Some(cursor), Some(&(ref picking_texture, _))) = (cursor_position, picking_attachments.as_ref()) {
+        if let (Some(cursor), Some(&(ref picking_texture, ref depth_texture))) = (cursor_position, picking_attachments.as_ref()) {
             let read_target = glium::Rect {
-                left: (cursor.0 - 1) as u32,
-                bottom: picking_texture.get_height().unwrap() - std::cmp::max(cursor.1 - 1, 0) as u32,
+                left: cursor.0.max(1) as u32 - 1,
+                bottom: picking_texture.get_height().unwrap() - cursor.1.max(1) as u32 - 1,
                 width: 1,
                 height: 1,
             };
@@ -223,8 +227,19 @@ fn main() {
             } else {
                 picking_pbo.write(&[0]);
             }
+            if read_target.left < depth_texture.get_width()
+            && read_target.bottom < depth_texture.get_height().unwrap() {
+                dbg!(depth_texture.get_internal_format().unwrap());
+                let image = depth_texture.main_level()
+                    .first_layer()
+                    .into_image(None).unwrap();
+                image.raw_read_to_pixel_buffer(&read_target, &pbo_depth);
+            } else {
+                pbo_depth.write(&[0.0]);
+            }
         } else {
             picking_pbo.write(&[0]);
+            pbo_depth.write(&[0.0]);
         }
 
         let mut action = support::Action::Continue;
